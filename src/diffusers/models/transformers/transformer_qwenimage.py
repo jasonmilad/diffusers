@@ -326,6 +326,16 @@ class QwenDoubleStreamAttnProcessor2_0:
         joint_query = torch.cat([txt_query, img_query], dim=1)
         joint_key = torch.cat([txt_key, img_key], dim=1)
         joint_value = torch.cat([txt_value, img_value], dim=1)
+        current_timestep = getattr(attn, '_current_timestep_value', -1)  # Get from attn, not self
+        if hasattr(attn, '_capture_queries') and attn._capture_queries:
+            if not hasattr(attn, '_captured_queries'):
+                attn._captured_queries = []
+            attn._captured_queries.append({
+            'timestep': current_timestep,
+            'joint': joint_query.detach().cpu(),
+            'img': img_query.detach().cpu(), 
+            'txt': txt_query.detach().cpu()
+        })
 
         # Compute joint attention
         joint_hidden_states = dispatch_attention_fn(
@@ -630,6 +640,26 @@ class QwenImageTransformer2DModel(
         image_rotary_emb = self.pos_embed(img_shapes, txt_seq_lens, device=hidden_states.device)
 
         for index_block, block in enumerate(self.transformer_blocks):
+            # Enable capture for first/last block at every 10% of timesteps
+            current_timestep = getattr(self, '_current_timestep_idx', -1)
+            total_timesteps = getattr(self, '_total_timesteps', 0)
+
+            if index_block == 0:  # First block
+                if total_timesteps > 0:
+                    # Calculate which timesteps to capture (every 10%)
+                    step_interval = max(1, total_timesteps // 10)  # Capture at 10 points
+                    capture_timesteps = set(range(0, total_timesteps, step_interval))
+                    # Always include the last timestep
+                    capture_timesteps.add(total_timesteps - 1)
+                    
+                    if current_timestep in capture_timesteps:
+                        block.attn._capture_queries = True
+                        block.attn._current_timestep_value = current_timestep
+                    else:
+                        block.attn._capture_queries = False
+                else:
+                    block.attn._capture_queries = False
+
             if torch.is_grad_enabled() and self.gradient_checkpointing:
                 encoder_hidden_states, hidden_states = self._gradient_checkpointing_func(
                     block,
