@@ -149,7 +149,7 @@ class QwenImagePipeline(DiffusionPipeline, QwenImageLoraLoaderMixin):
     """
 
     model_cpu_offload_seq = "text_encoder->transformer->vae"
-    _callback_tensor_inputs = ["latents", "prompt_embeds"]
+    _callback_tensor_inputs = ["latents", "prompt_embeds", "prompt_embeds_mask", "txt_seq_lens"]
 
     def __init__(
         self,
@@ -738,6 +738,8 @@ class QwenImagePipeline(DiffusionPipeline, QwenImageLoraLoaderMixin):
 
                     latents = callback_outputs.pop("latents", latents)
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
+                    prompt_embeds_mask = callback_outputs.pop("prompt_embeds_mask", prompt_embeds_mask)
+                    txt_seq_lens = callback_outputs.pop("txt_seq_lens", txt_seq_lens)
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
